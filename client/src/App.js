@@ -54,7 +54,7 @@ class App extends Component {
           <textarea value={this.state.incoming} onChange={this.updateIncoming}></textarea>
           <button onClick={this.handleSubmit}>submit</button>
         </div>
-        <pre id="outgoing"></pre>
+        <pre style={{ width: '600px', wordWrap: 'break-word' }}>{this.state.outgoing}</pre>
       </div>
     );
   }
