@@ -11,7 +11,11 @@ class App extends Component {
     this.state = {
       channelName: '',
       peer: null,
-      hub: signalhub('test-whiti', [ 'localhost:8080' ])
+      peerId: cuid(),
+      hub: signalhub('test-whiti', [ 'localhost:8080' ]),
+      connected: false,
+      messages: [],
+      currentMessage: ''
     }
   }
 
@@ -25,20 +29,32 @@ class App extends Component {
 
     .on('connect', () => {
       console.log('CONNECT')
-      this.state.peer.send('whatever' + Math.random())
+      const connectedMsg = `${this.state.peerId} has connected`
+      this.setState({
+        connected: true,
+        messages: this.state.messages.concat(connectedMsg)
+      })
+      this.state.peer.send(JSON.stringify({ sender: this.state.peerId, message: connectedMsg, connect: true }))
     })
 
-    .on('data', function (data) {
-      console.log('data: ' + data)
+    .on('data', (data) => {
+      const parsedData = JSON.parse(data)
+      const { sender, message, connect } = parsedData
+      console.log('parsedData: ' + parsedData)
+      if (message) {
+        const constructedMessage = connect ? message : `${sender}: ${message}`
+        this.setState({
+          messages: this.state.messages.concat(constructedMessage)
+        })
+      }
     })
   }
 
   connectChannel = () => {
     console.log('connecting channel')
-    const { hub, channelName } = this.state
-    const cid = cuid()
+    const { hub, channelName, peerId } = this.state
 
-    hub.subscribe(channelName + `_${cid}`)
+    hub.subscribe(channelName + `_${peerId}`)
       .on('data', (signal) => {
         const parsedSignal = JSON.parse(signal)
         console.log(new Date().toLocaleTimeString(), 'msg in connect', parsedSignal)
@@ -46,7 +62,7 @@ class App extends Component {
       })
 
     const signalCb = (data) => {
-      hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: cid })))
+      hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
     }
 
     const peer = this.createPeer({ isInitiator: true, signalCb })
@@ -80,6 +96,21 @@ class App extends Component {
     })
   }
 
+  updateCurrentMessage = (ev) => {
+    this.setState({
+      currentMessage: ev.target.value
+    })
+  }
+
+  sendMessage = () => {
+    const { peer, peerId, messages, currentMessage } = this.state
+    peer.send(JSON.stringify({ sender: peerId, message: currentMessage }))
+    this.setState({
+      currentMessage: '',
+      messages: messages.concat(currentMessage)
+    })
+  }
+
   render() {
     return (
       <div className="App">
@@ -88,6 +119,21 @@ class App extends Component {
           <div style={{ display: 'flex', flexDirection: 'row' }}>
             <button onClick={this.connectChannel}>CONNECT</button>
             <button onClick={this.startChannel}>START</button>
+          </div>
+        </div>
+        <div>
+          <label>message:</label>
+          <input value={this.state.currentMessage} onChange={this.updateCurrentMessage}></input>
+          <button onClick={this.sendMessage}>send</button>
+          <div>
+            <h3>MESSAGES:</h3>
+            {
+              this.state.messages.map((m, i) => {
+                return (
+                  <p key={i}>{m}</p>
+                )
+              })
+            }
           </div>
         </div>
       </div>
