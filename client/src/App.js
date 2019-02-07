@@ -12,7 +12,7 @@ class App extends Component {
       channelName: '',
       peer: null,
       peerId: cuid(),
-      hub: signalhub('test-whiti', [ 'localhost:8080' ]),
+      hub: signalhub('test-whiti', [ 'https://signalhub-twkhucfxhs.now.sh/' ]),
       connected: false,
       messages: [],
       currentMessage: ''
