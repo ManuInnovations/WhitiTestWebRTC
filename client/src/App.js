@@ -1,5 +1,7 @@
 import React, { Component } from 'react';
 import Peer from 'simple-peer'
+import signalhub from 'signalhub'
+import cuid from 'cuid'
 
 import './App.css';
 
@@ -7,54 +9,87 @@ class App extends Component {
   constructor () {
     super()
     this.state = {
+      channelName: '',
       peer: null,
-      incoming: '',
-      outgoing: ''
+      hub: signalhub('test-whiti', [ 'localhost:8080' ])
     }
   }
 
-  componentDidMount () {
-    const p = new Peer({ initiator: window.location.hash === '#1', trickle: false })
-    p.on('error', function (err) { console.log('error', err) })
-    p.on('signal', (data) => {
-      console.log('SIGNAL', JSON.stringify(data))
-      this.setState({
-        outgoing: JSON.stringify(data)
-      })
+  createPeer = ({ isInitiator, signalCb }) => {
+    return new Peer({ initiator: isInitiator, trickle: false })
+    .on('error', function (err) { console.log('error', err) })
+
+    .on('signal', (data) => {
+      signalCb(data)
     })
 
-    p.on('connect', function () {
+    .on('connect', () => {
       console.log('CONNECT')
-      p.send('whatever' + Math.random())
+      this.state.peer.send('whatever' + Math.random())
     })
 
-    p.on('data', function (data) {
+    .on('data', function (data) {
       console.log('data: ' + data)
     })
-
-    this.setState({
-      peer: p
-    })
   }
 
-  handleSubmit = () => {
-    this.state.peer.signal(JSON.parse(this.state.incoming))
+  connectChannel = () => {
+    console.log('connecting channel')
+    const { hub, channelName } = this.state
+    const cid = cuid()
+
+    hub.subscribe(channelName + `_${cid}`)
+      .on('data', (signal) => {
+        const parsedSignal = JSON.parse(signal)
+        console.log(new Date().toLocaleTimeString(), 'msg in connect', parsedSignal)
+        this.state.peer.signal(parsedSignal)
+      })
+
+    const signalCb = (data) => {
+      hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: cid })))
+    }
+
+    const peer = this.createPeer({ isInitiator: true, signalCb })
+    this.setState({ peer })
   }
 
-  updateIncoming = (ev) => {
+  startChannel = () => {
+    console.log('starting channel')
+    const { hub, channelName } = this.state
+    let sender
+
+    hub.subscribe(channelName)
+      .on('data', (signal) => {
+        const parsedSignal = JSON.parse(signal)
+        sender = parsedSignal.sender
+        console.log(new Date().toLocaleTimeString(), 'msg in start', parsedSignal)
+        this.state.peer.signal(parsedSignal)
+      })
+
+    const signalCb = (data) => {
+      hub.broadcast(channelName + `_${sender}`, JSON.stringify(data))
+    }
+
+    const peer = this.createPeer({ isInitiator: false, signalCb })
+    this.setState({ peer })
+  }
+
+  updateChannelName = (ev) => {
     this.setState({
-      incoming: ev.target.value
+      channelName: ev.target.value
     })
   }
 
   render() {
     return (
       <div className="App">
-        <div>
-          <textarea value={this.state.incoming} onChange={this.updateIncoming}></textarea>
-          <button onClick={this.handleSubmit}>submit</button>
+        <div style={{ display: 'flex', flexDirection: 'column', width: '200px' }}>
+          <input value={this.state.channelName} onChange={this.updateChannelName}></input>
+          <div style={{ display: 'flex', flexDirection: 'row' }}>
+            <button onClick={this.connectChannel}>CONNECT</button>
+            <button onClick={this.startChannel}>START</button>
+          </div>
         </div>
-        <pre style={{ width: '600px', wordWrap: 'break-word' }}>{this.state.outgoing}</pre>
       </div>
     );
   }
