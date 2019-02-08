@@ -19,8 +19,8 @@ class App extends Component {
     }
   }
 
-  createPeer = ({ isInitiator, signalCb }) => {
-    return new Peer({ initiator: isInitiator, trickle: false })
+  createPeer = ({ isInitiator, signalCb, stream }) => {
+    return new Peer({ initiator: isInitiator, trickle: false, stream })
     .on('error', function (err) { console.log('error', err) })
 
     .on('signal', (data) => {
@@ -48,6 +48,13 @@ class App extends Component {
         })
       }
     })
+
+    .on('stream', (stream) => {
+      console.log('streaming?')
+      const player = document.querySelector('video')
+      player.srcObject = stream
+      player.play()
+    })
   }
 
   connectChannel = () => {
@@ -65,8 +72,13 @@ class App extends Component {
       hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
     }
 
-    const peer = this.createPeer({ isInitiator: true, signalCb })
-    this.setState({ peer })
+    this.getAudioStream()
+    .then((stream) => {
+      console.log('getAudioStream stream', stream)
+      const peer = this.createPeer({ isInitiator: true, signalCb, stream })
+      this.setState({ peer })
+    })
+    .catch((err) => console.error(err))
   }
 
   startChannel = () => {
@@ -86,8 +98,23 @@ class App extends Component {
       hub.broadcast(channelName + `_${sender}`, JSON.stringify(data))
     }
 
-    const peer = this.createPeer({ isInitiator: false, signalCb })
-    this.setState({ peer })
+    this.getAudioStream()
+    .then((stream) => {
+      console.log('getAudioStream stream', stream)
+      const peer = this.createPeer({ isInitiator: false, signalCb, stream })
+      this.setState({ peer })
+    })
+    .catch((err) => console.error(err))
+  }
+
+  getAudioStream = () => {
+    return navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    .then((stream) => {
+      return stream
+    })
+    .catch((err) => {
+      return err
+    })
   }
 
   updateChannelName = (ev) => {
@@ -121,6 +148,7 @@ class App extends Component {
             <button onClick={this.startChannel}>START</button>
           </div>
         </div>
+        <video></video>
         <div>
           <label>message:</label>
           <input value={this.state.currentMessage} onChange={this.updateCurrentMessage}></input>
