@@ -15,13 +15,17 @@ class App extends Component {
       hub: signalhub('test-whiti', [ 'https://signalhub-twkhucfxhs.now.sh/' ]),
       connected: false,
       messages: [],
-      currentMessage: ''
+      currentMessage: '',
+      errors: ''
     }
   }
 
   createPeer = ({ isInitiator, signalCb, stream }) => {
     return new Peer({ initiator: isInitiator, trickle: false, stream })
-    .on('error', function (err) { console.log('error', err) })
+    .on('error', (err) => {
+      console.log('error', err)
+      this.setState({ errors: this.state.errors + err })
+    })
 
     .on('signal', (data) => {
       signalCb(data)
@@ -78,7 +82,10 @@ class App extends Component {
       const peer = this.createPeer({ isInitiator: true, signalCb, stream })
       this.setState({ peer })
     })
-    .catch((err) => console.error(err))
+    .catch((err) => {
+      console.error(err)
+      this.setState({ errors: this.state.errors + err })
+    })
   }
 
   startChannel = () => {
@@ -104,7 +111,10 @@ class App extends Component {
       const peer = this.createPeer({ isInitiator: false, signalCb, stream })
       this.setState({ peer })
     })
-    .catch((err) => console.error(err))
+    .catch((err) => {
+      console.error(err)
+      this.setState({ errors: this.state.errors + err })
+    })
   }
 
   getAudioStream = () => {
@@ -149,6 +159,12 @@ class App extends Component {
           </div>
         </div>
         <video></video>
+        {/* <audio></audio> */}
+        {
+          this.state.errors
+          ? <p>{this.state.errors}</p>
+          : null
+        }
         <div>
           <label>message:</label>
           <input value={this.state.currentMessage} onChange={this.updateCurrentMessage}></input>
