@@ -56,7 +56,12 @@ class App extends Component {
     .on('stream', (stream) => {
       console.log('streaming?')
       const player = document.querySelector('video')
-      player.srcObject = stream
+      try {
+        player.srcObject = stream;
+      } catch (error) {
+        console.log('old browser video tag', error)
+        player.src = URL.createObjectURL(stream);
+      }
       player.play()
     })
   }
@@ -158,7 +163,7 @@ class App extends Component {
             <button onClick={this.startChannel}>START</button>
           </div>
         </div>
-        <video></video>
+        <video muted playsInline></video>
         {/* <audio></audio> */}
         {
           this.state.errors
