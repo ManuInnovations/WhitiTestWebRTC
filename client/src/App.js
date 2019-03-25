@@ -55,12 +55,11 @@ class App extends Component {
 
     .on('stream', (stream) => {
       console.log('peer on stream')
-      // const player = document.querySelector('video')
       const player = document.querySelector('audio')
       try {
         player.srcObject = stream;
       } catch (error) {
-        console.log('old browser video tag', error)
+        console.log('old browser?', error)
         player.src = URL.createObjectURL(stream);
       }
     })
@@ -68,55 +67,21 @@ class App extends Component {
 
   connectChannel = () => {
     console.log('connecting channel')
-    const { hub, channelName, peerId } = this.state
+    const { hub, channelName } = this.state
+    const signalCb = this.signalCb
 
-    hub.subscribe(channelName)
-      .on('data', (signal) => {
-        const parsedSignal = JSON.parse(signal)
-        const sender = parsedSignal.sender
+    hub.subscribe(channelName).on('data', this.handleHubData)
 
-        if (sender !== peerId) {
-          this.state.peer.signal(parsedSignal)
-        }
-      })
-
-    const signalCb = (data) => {
-      hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
-    }
-
-    // this.getAudioStream()
-    // .then((stream) => {
-    //   console.log('getAudioStream stream', stream)
-    //   const peer = this.createPeer({ isInitiator: true, signalCb, stream })
-    //   this.setState({ peer })
-    // })
-    // .catch((err) => {
-    //   console.error(err)
-    //   this.setState({ errors: this.state.errors + err })
-    // })
     const peer = this.createPeer({ signalCb, opts: { initiator: false, offerConstraints: { offerToReceiveAudio: true } }})
     this.setState({ peer })
   }
 
   startChannel = () => {
     console.log('starting channel')
-    const { hub, channelName, peerId } = this.state
-    // var sender
+    const { hub, channelName } = this.state
+    const signalCb = this.signalCb
 
-    hub.subscribe(channelName)
-      .on('data', (signal) => {
-        const parsedSignal = JSON.parse(signal)
-        const sender = parsedSignal.sender
-
-        if (sender !== peerId) {
-          console.log(new Date().toLocaleTimeString(), 'msg in start', parsedSignal)
-          this.state.peer.signal(parsedSignal)
-        }
-      })
-
-      const signalCb = (data) => {
-        hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
-      }
+    hub.subscribe(channelName).on('data', this.handleHubData)
 
     this.getAudioStream()
     .then((stream) => {
@@ -128,6 +93,21 @@ class App extends Component {
       console.error(err)
       this.setState({ errors: this.state.errors + err })
     })
+  }
+
+  signalCb = (data) => {
+    const { hub, channelName, peerId } = this.state
+    hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
+  }
+
+  handleHubData = (signal) => {
+    const { peer, peerId } = this.state
+    const parsedSignal = JSON.parse(signal)
+    const sender = parsedSignal.sender
+
+    if (sender !== peerId) {
+      peer.signal(parsedSignal)
+    }
   }
 
   getAudioStream = () => {
@@ -171,8 +151,7 @@ class App extends Component {
             <button onClick={this.startChannel}>START</button>
           </div>
         </div>
-        {/* <video muted playsInline></video> */}
-        <audio controls autoPlay></audio>
+        <audio controls></audio>
         {
           this.state.errors
           ? <p>{this.state.errors}</p>
