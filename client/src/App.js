@@ -10,8 +10,11 @@ class App extends Component {
     super()
     this.state = {
       channelName: '',
-      peer: null,
-      peerId: cuid(),
+      stream: null,
+      listenerPeer: null,
+      broadcasterPeers: null,
+      id: null,
+      recipient: null,
       hub: signalhub('test-whiti', [ 'https://signalhub-twkhucfxhs.now.sh/' ]),
       connected: false,
       messages: [],
@@ -20,25 +23,26 @@ class App extends Component {
     }
   }
 
-  createPeer = ({ signalCb, opts }) => {
+  createPeer = ({ signalCb, recipient, opts }) => {
     return new Peer({ trickle: false, ...opts })
     .on('error', (err) => {
       console.log('error', err)
       this.setState({ errors: this.state.errors + err })
     })
 
-    .on('signal', (data) => {
-      signalCb(data)
-    })
+    .on('signal', signalCb)
 
     .on('connect', () => {
-      console.log('CONNECT')
-      const connectedMsg = `${this.state.peerId} has connected`
+      const connectedMsg = `${this.state.id} has connected`
       this.setState({
         connected: true,
         messages: this.state.messages.concat(connectedMsg)
       })
-      this.state.peer.send(JSON.stringify({ sender: this.state.peerId, message: connectedMsg, connect: true }))
+      if (this.state.listenerPeer) {
+        this.state.listenerPeer.send(JSON.stringify({ sender: this.state.id, message: connectedMsg, connect: true }))
+      } else {
+        this.state.broadcasterPeers[recipient].send(JSON.stringify({ sender: this.state.id, message: connectedMsg, connect: true }))
+      }
     })
 
     .on('data', (data) => {
@@ -68,26 +72,24 @@ class App extends Component {
   connectChannel = () => {
     console.log('connecting channel')
     const { hub, channelName } = this.state
-    const signalCb = this.signalCb
 
-    hub.subscribe(channelName).on('data', this.handleHubData)
+    this.setState({ id: cuid() }, () => {
+      hub.subscribe(channelName).on('data', this.handleHubDataAsListener)
 
-    const peer = this.createPeer({ signalCb, opts: { initiator: false, offerConstraints: { offerToReceiveAudio: true } }})
-    this.setState({ peer })
+      const listenerPeer = this.createPeer({ signalCb: this.signalCb(), opts: { initiator: true, offerConstraints: { offerToReceiveAudio: true } }})
+      this.setState({ listenerPeer })
+    })
   }
 
   startChannel = () => {
     console.log('starting channel')
     const { hub, channelName } = this.state
-    const signalCb = this.signalCb
-
-    hub.subscribe(channelName).on('data', this.handleHubData)
 
     this.getAudioStream()
     .then((stream) => {
-      console.log('getAudioStream stream', stream)
-      const peer = this.createPeer({ signalCb, opts: { initiator: true, stream, offerConstraints: { offerToReceiveAudio: false } } })
-      this.setState({ peer })
+      this.setState({ id: cuid(), stream }, () => {
+        hub.subscribe(channelName).on('data', this.handleHubDataAsBroadcaster)
+      })
     })
     .catch((err) => {
       console.error(err)
@@ -95,19 +97,40 @@ class App extends Component {
     })
   }
 
-  signalCb = (data) => {
-    const { hub, channelName, peerId } = this.state
-    hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: peerId })))
+  handleHubDataAsBroadcaster = (signal) => {
+    const { broadcasterPeers, id, stream } = this.state
+    const parsedSignal = JSON.parse(signal)
+    const { type, sender } = parsedSignal
+
+    if (type === 'offer') {
+      // a new listener is trying to connect
+      const newPeer = this.createPeer({ signalCb: this.signalCb(sender), recipient: sender, opts: { initiator: false, stream, offerConstraints: { offerToReceiveAudio: false } } })
+      this.setState({
+        broadcasterPeers: {...broadcasterPeers, [sender]: newPeer }
+      }, () => {
+        newPeer.signal(parsedSignal)
+      })
+    } else if (sender !== id) {
+      // signal if the sender is anyone else
+      broadcasterPeers[sender].signal(parsedSignal)
+    }
   }
 
-  handleHubData = (signal) => {
-    const { peer, peerId } = this.state
+  handleHubDataAsListener = (signal) => {
+    const { listenerPeer, id } = this.state
     const parsedSignal = JSON.parse(signal)
-    const sender = parsedSignal.sender
+    const { recipient } = parsedSignal
 
-    if (sender !== peerId) {
-      peer.signal(parsedSignal)
+    // signal only if the recipient is us
+    if (recipient === id) {
+      listenerPeer.signal(parsedSignal)
     }
+  }
+
+  signalCb = (recipient) => (data) => {
+    // if listener calling this, recipient will be undefined
+    const { hub, channelName, id } = this.state
+    hub.broadcast(channelName, JSON.stringify(Object.assign(data, { sender: id, recipient })))
   }
 
   getAudioStream = () => {
@@ -133,8 +156,15 @@ class App extends Component {
   }
 
   sendMessage = () => {
-    const { peer, peerId, messages, currentMessage } = this.state
-    peer.send(JSON.stringify({ sender: peerId, message: currentMessage }))
+    const { listenerPeer, broadcasterPeers, id, messages, currentMessage } = this.state
+    if (listenerPeer) {
+      listenerPeer.send(JSON.stringify({ sender: id, message: currentMessage }))
+    } else {
+      Object.keys(broadcasterPeers).forEach((peer) => {
+        broadcasterPeers[peer].send(JSON.stringify({ sender: id, message: currentMessage }))
+      })
+    }
+
     this.setState({
       currentMessage: '',
       messages: messages.concat(currentMessage)
